@@ -4,7 +4,8 @@ import ts from 'typescript';
 const toModule = source => 'data:text/javascript;base64,' + Buffer.from(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 const menu = toModule(await readFile(new URL('../lib/menu.ts', import.meta.url), 'utf8'));
 const operations = toModule(await readFile(new URL('../lib/operations.ts', import.meta.url), 'utf8'));
-const source = (await readFile(new URL('../lib/browser-demo.ts', import.meta.url), 'utf8')).replace('"./menu"', JSON.stringify(menu)).replace('"./operations"', JSON.stringify(operations));
+const pickup = toModule(await readFile(new URL('../lib/pickup.ts', import.meta.url), 'utf8'));
+const source = (await readFile(new URL('../lib/browser-demo.ts', import.meta.url), 'utf8')).replace('"./menu"', JSON.stringify(menu)).replace('"./operations"', JSON.stringify(operations)).replace('"./pickup"', JSON.stringify(pickup));
 const {demoRequest: api} = await import(toModule(source));
 const values = new Map(); globalThis.localStorage = { getItem: key => values.get(key) || null, setItem: (key,value) => values.set(key,String(value)), removeItem: key => values.delete(key) };
 globalThis.fetch = () => { throw new Error('Public demo unexpectedly made a network API request'); };
@@ -19,7 +20,7 @@ const product=(await api('demo-stall')).products.find(p=>p.name==='测试商品'
 check('product without image reaches customer menu',product && product.image_data===null);
 check('product is isolated from another store',(await api('template-shop')).products.every(p=>p.id!==product.id));
 await reject('cannot edit other store product',()=>post('product',{...product,active:true},'demo-shop','template-shop'));
-await post('profile',{name:'示例店改名',subtitle:'自取地址',description:'测试店铺介绍',accent:'#2563eb',heroImage:null});
+await post('profile',{name:'示例店改名',subtitle:'自取地址',description:'测试店铺介绍',accent:'#2563eb',heroImage:null,contactPhone:'0571-0000-0000',categoryOrder:['自定义分类','基础款']});
 check('store presentation reaches customer',(await api('demo-stall')).merchant.name==='示例店改名');
 const current=await api('demo-stall'); const payload={idempotencyKey:crypto.randomUUID(),accessToken:crypto.randomUUID(),items:[{id:product.id,quantity:1,expectedPrice:850}],pickupAt:current.slots[2].at,spice:'不辣',note:'虚构订单',alias:'演示同学'};
 const order=await post('order',payload,'');
@@ -61,6 +62,25 @@ await reject('invalid order pagination rejected',()=>api('demo-stall','view=oper
 check('tenant overview includes separate sales totals',(await api('demo-stall','service','demo-admin')).tenants.find(t=>t.id==='demo-stall').stats.confirmedRevenue===850);
 const legacy=JSON.parse(values.get('snack:public-demo:v1'));legacy.shops['demo-stall'].key='demo-shop';values.set('snack:public-demo:v1',JSON.stringify(legacy));
 check('legacy shared demo keys are upgraded without losing orders',(await post('merchant_login',{},'demo-stall-shop')).orders.length===25);
+
+
+const {validPickup,pickupBucket,pickupWindow,kitchenReceipt,feieReceipt}=await import(pickup);
+let arbitrary=pickupWindow().earliest+23*60000;if(arbitrary%600000===0)arbitrary+=60000;
+const minutePayload={...payload,idempotencyKey:crypto.randomUUID(),accessToken:crypto.randomUUID(),pickupAt:arbitrary,items:[{id:product.id,quantity:1,expectedPrice:950}],spice:'不辣',note:'不加洋葱'};
+await post('service',{action:'issue'},'demo-admin');const minuteOrder=await post('order',minutePayload,'');
+check('arbitrary minute is accepted without ten-minute rounding',minuteOrder.pickup_at===arbitrary && arbitrary%600000!==0);
+check('receipt starts with time and large-content text',/^\d{2}:\d{2}\n/.test(minuteOrder.print.receipt) && minuteOrder.print.receipt.includes('1份（不加辣；不加洋葱）') && !minuteOrder.print.receipt.includes('合计'));
+check('receipt contains only small pickup identity footer',minuteOrder.print.receipt.split('\n').length===4);
+check('printer markup enlarges time and food safely',feieReceipt(minuteOrder.print.receipt).startsWith('<CB>') && feieReceipt(minuteOrder.print.receipt).includes('<B>'));
+check('customer receives merchant phone and sidebar category order',(await api('demo-stall')).merchant.contactPhone==='0571-0000-0000' && (await api('demo-stall')).merchant.categoryOrder[0]==='自定义分类');
+await reject('invalid merchant phone rejected',()=>post('profile',{name:'测试店',accent:'#ea531a',contactPhone:'invalid',categoryOrder:[]}));
+await reject('duplicate sidebar categories rejected',()=>post('profile',{name:'测试店',accent:'#ea531a',contactPhone:'0571-0000-0000',categoryOrder:['测试','测试']}));
+await reject('past pickup time rejected',()=>post('order',{...minutePayload,idempotencyKey:crypto.randomUUID(),accessToken:crypto.randomUUID(),pickupAt:Date.now()-60000},''));
+check('pickup seconds are not silently rounded',!validPickup(arbitrary+1000));
+await post('service',{action:'capacity',capacity:1},'demo-admin');const bucket=pickupBucket(arbitrary);const neighbour=arbitrary===bucket.end-60000?arbitrary-60000:arbitrary+60000;
+await reject('adjacent minutes still respect merchant capacity',()=>post('order',{...minutePayload,idempotencyKey:crypto.randomUUID(),accessToken:crypto.randomUUID(),pickupAt:neighbour},''));
+await post('service',{action:'capacity',capacity:6},'demo-admin');
+const injected=feieReceipt(kitchenReceipt({...minuteOrder,note:'<CUT><B>注入</B>'}));check('customer notes cannot inject print commands',!injected.includes('<CUT>') && (injected.match(/<B>/g)||[]).length===1);
 
 await writeFile(new URL('./browser-demo-validation-report.json',import.meta.url),JSON.stringify({count:passed.length,passed,scope:'Browser simulation only; not proof of server authorization or payment integration'},null,2)+'\n');
 console.log(`All ${passed.length} static-demo checks passed.`);

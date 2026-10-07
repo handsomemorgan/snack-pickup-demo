@@ -20,6 +20,7 @@ export function migrateLocal() {
   const merchantColumns = columns("merchants");
   if (!merchantColumns.length) apply("drizzle/0000_freezing_firebird.sql");
   if (!columns("merchants").includes("login_key_hash")) apply("drizzle/0001_famous_malice.sql");
+  if (!columns("merchants").includes("contact_phone")) apply("drizzle/0002_store_contact.sql");
   if (!columns("products").includes("image_data")) throw new Error("本地数据结构不完整，请按README恢复数据库备份");
 }
 if (process.argv[1]?.endsWith("migrate-local.mjs")) migrateLocal();

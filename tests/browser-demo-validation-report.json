@@ -1,5 +1,5 @@
 {
-  "count": 33,
+  "count": 44,
   "passed": [
     "simulated menu is seeded without network requests",
     "non-demo login rejected",
@@ -33,7 +33,18 @@
     "paginated records retain all-order totals",
     "invalid order pagination rejected",
     "tenant overview includes separate sales totals",
-    "legacy shared demo keys are upgraded without losing orders"
+    "legacy shared demo keys are upgraded without losing orders",
+    "arbitrary minute is accepted without ten-minute rounding",
+    "receipt starts with time and large-content text",
+    "receipt contains only small pickup identity footer",
+    "printer markup enlarges time and food safely",
+    "customer receives merchant phone and sidebar category order",
+    "invalid merchant phone rejected",
+    "duplicate sidebar categories rejected",
+    "past pickup time rejected",
+    "pickup seconds are not silently rounded",
+    "adjacent minutes still respect merchant capacity",
+    "customer notes cannot inject print commands"
   ],
   "scope": "Browser simulation only; not proof of server authorization or payment integration"
 }

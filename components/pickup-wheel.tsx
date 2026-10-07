@@ -1,0 +1,21 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { Clock3 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MINUTE, pickupClock } from "@/lib/pickup";
+type Choice={value:number;label:string};
+function Wheel({label,choices,value,onChange}:{label:string;choices:Choice[];value:number;onChange:(v:number)=>void}){
+  const ref=useRef<HTMLDivElement>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null),callback=useRef(onChange);callback.current=onChange;
+  useEffect(()=>{const index=choices.findIndex(c=>c.value===value);if(ref.current&&index>=0)ref.current.scrollTop=index*44;return()=>{if(timer.current)clearTimeout(timer.current);};},[value,choices.map(c=>c.value).join(",")]);
+  return <div className="wheel-column"><span className="wheel-label">{label}</span><div className="wheel-list" ref={ref} role="listbox" tabIndex={0} aria-label={label} onKeyDown={e=>{const index=choices.findIndex(c=>c.value===value);const delta=e.key==="ArrowDown"?1:e.key==="ArrowUp"?-1:e.key==="PageDown"?5:e.key==="PageUp"?-5:0;if(delta){e.preventDefault();callback.current(choices[Math.max(0,Math.min(choices.length-1,index+delta))].value);}}} onScroll={()=>{if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{const i=Math.max(0,Math.min(choices.length-1,Math.round((ref.current?.scrollTop||0)/44)));if(choices[i])callback.current(choices[i].value);},180);}}>{choices.map(c=><button type="button" role="option" aria-selected={c.value===value} key={c.value} className={c.value===value?"wheel-selected":""} onClick={()=>callback.current(c.value)}>{c.label}</button>)}</div></div>;
+}
+const chinaDay=(at:number)=>Math.floor((at+8*3600000)/86400000)*86400000-8*3600000;
+export function PickupWheel({value,onChange,window}:{value:string;onChange:(v:string)=>void;window:{earliest:number;latest:number}}){
+  const [open,setOpen]=useState(false),[draft,setDraft]=useState(window.earliest);
+  const current=Math.min(window.latest,Math.max(window.earliest,draft)),day=chinaDay(current),hour=Math.floor((current-day)/3600000),minute=Math.floor((current-day-hour*3600000)/MINUTE);
+  const days:Choice[]=[];for(let at=chinaDay(window.earliest);at<=chinaDay(window.latest);at+=86400000)days.push({value:at,label:(at===chinaDay(Date.now())?"今天 ":"明天 ")+new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"2-digit",day:"2-digit"}).format(at)});
+  const hours=Array.from({length:24},(_,h)=>h).filter(h=>day+(h+1)*3600000-MINUTE>=window.earliest&&day+h*3600000<=window.latest).map(h=>({value:h,label:String(h).padStart(2,"0")}));
+  const minutes=Array.from({length:60},(_,m)=>m).filter(m=>{const at=day+hour*3600000+m*MINUTE;return at>=window.earliest&&at<=window.latest;}).map(m=>({value:m,label:String(m).padStart(2,"0")}));
+  const update=(at:number)=>setDraft(Math.max(window.earliest,Math.min(window.latest,at)));
+  return <><button id="pickup" type="button" className="pickup-time-button" onClick={()=>{setDraft(Number(value)||window.earliest);setOpen(true);}}><Clock3 size={19}/><span>{value?new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(Number(value)):"选择取餐时间"}</span><span aria-hidden="true">›</span></button><Dialog open={open} onOpenChange={setOpen}><DialogContent className="wheel-dialog"><DialogHeader><DialogTitle>什么时候来取？</DialogTitle><DialogDescription>滑动选择日期、小时和分钟。最早 {pickupClock(window.earliest)}，可预约未来24小时。</DialogDescription></DialogHeader><div className="time-wheels"><Wheel label="取餐日期" choices={days} value={day} onChange={d=>update(d+hour*3600000+minute*MINUTE)}/><Wheel label="取餐小时" choices={hours} value={hour} onChange={h=>update(day+h*3600000+minute*MINUTE)}/><Wheel label="取餐分钟" choices={minutes} value={minute} onChange={m=>update(day+hour*3600000+m*MINUTE)}/></div><p className="wheel-summary">{new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"2-digit",day:"2-digit"}).format(current)} <strong>{pickupClock(current)}</strong> 取餐</p><button className="primary" onClick={()=>{onChange(String(current));setOpen(false);}}>就选这个时间</button></DialogContent></Dialog></>;
+}

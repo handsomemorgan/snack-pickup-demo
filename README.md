@@ -42,10 +42,17 @@ npm run build
 node tests/browser-demo-checks.mjs
 ```
 
-公开模拟版的 33 项检查覆盖商品同步、租户操作边界、订单价格快照、重复提交、到期授权与浏览器存储隔离；见 `tests/browser-demo-validation-report.json`。另有21项本地接口检查，覆盖密钥自动识别、权限、数据隔离、营业金额与分页，见 `tests/operations-validation-report.json`。这些检查不证明真实支付或硬件可用。
+公开模拟版的 44 项检查覆盖商品同步、租户操作边界、订单价格快照、重复提交、到期授权与浏览器存储隔离；见 `tests/browser-demo-validation-report.json`。另有30项本地接口检查，覆盖密钥自动识别、权限、数据隔离、营业金额与分页，见 `tests/operations-validation-report.json`。这些检查不证明真实支付或硬件可用。
 
 ## 来源与范围
 
 界面使用 React、shadcn 组件；本地服务基于 Vinext、Cloudflare 本地运行组件和 Drizzle。保留已有组件及依赖许可；`vendor/` 与 `build/` 附带相应原始许可。餐品示意图由 AI 生成，非商户实拍。代码和界面由 Codex 辅助开发。
 
 独立店铺入口和资金直接进入商户账户是产品设计选择，不构成免办 EDI、备案或其他许可的法律结论；实际要求仍应按运营行为、主体和部署方式确认。
+
+## 手机点单更新
+
+左侧分类由店家设置顺序；提供团建/大批量购买入口与联系电话。顾客用日期、小时、分钟滚轮预约未来24小时，最早提前10分钟，无需勾选确认。后台仍按十分钟产能区间原子校验总份数，选任意分钟不能绕过产能。票据突出取餐时刻及餐品/口味，只保留小字取餐码、日期和预约票提示。飞鹅适配使用官方文档的 CB、B 放大标签，并清除用户文本中的控制标签；未联调真机：[官方打印标签说明](https://www.feieyun.com/open/apidoc-en.html)。店家电话在设置页面填写，示例电话不可拨号。本地启动自动增加电话与分类字段并保留原数据。
+
+顾客演示：https://handsomemorgan.github.io/snack-customer-demo/
+店家演示：https://handsomemorgan.github.io/snack-merchant-demo/

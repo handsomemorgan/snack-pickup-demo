@@ -1,5 +1,5 @@
 {
-  "count": 21,
+  "count": 30,
   "passed": [
     "new tenant receives unique merchant key",
     "key resolves correct store from different entry",
@@ -21,7 +21,16 @@
     "other store search cannot reveal order",
     "report contains details without sensitive authentication fields",
     "invalid pagination rejected",
-    "superadmin overview has independent tenant totals"
+    "superadmin overview has independent tenant totals",
+    "phone and ordered categories reach customer catalog",
+    "invalid phone is rejected",
+    "duplicate categories rejected",
+    "arbitrary minute remains exact in database",
+    "simplified ticket starts with time and food",
+    "past pickup time rejected",
+    "sub-minute timestamps rejected",
+    "capacity cannot be bypassed using nearby minute",
+    "concurrent distinct minutes do not overbook shared capacity"
   ],
   "scope": "Local mock database, no real payment or merchant data"
 }

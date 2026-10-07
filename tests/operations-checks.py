@@ -1,7 +1,7 @@
 """Local demo integration checks. Creates two disposable, simulated test tenants.
 Never connect this test to a commercial deployment. Does not print any secrets.
 """
-import urllib.request,urllib.error,json,uuid
+import urllib.request,urllib.error,json,uuid,concurrent.futures
 from pathlib import Path
 from urllib.parse import urlencode
 BASE='http://127.0.0.1:5173/api/snack'
@@ -55,6 +55,27 @@ check('other store search cannot reveal order',call(b,'operations',admin,search=
 row=found['orders'][0];check('report contains details without sensitive authentication fields',row['items'][0]['name']=='测试餐品' and all(k not in row for k in ['access_hash','request_hash','idempotency_key','login_key_hash','accessToken']))
 check('invalid pagination rejected',call(a,'operations',admin,page=0)[0]==400)
 _,overview=call(a,'service',admin);check('superadmin overview has independent tenant totals',next(t for t in overview['tenants'] if t['id']==a)['stats']['confirmedRevenue']==3702)
+
+profile={'name':'接口验证示例店 A','subtitle':'测试位置','description':'模拟资料','accent':'#ea531a','heroImage':None,'contactPhone':'0571-0000-0000','categoryOrder':['热食','饮品']}
+post(a,'profile',profile,ka);_,catalog=call(a)
+check('phone and ordered categories reach customer catalog',catalog['merchant']['contactPhone']=='0571-0000-0000' and catalog['merchant']['categoryOrder']==['热食','饮品'])
+check('invalid phone is rejected',call(a,key=ka,body={'action':'profile','payload':{**profile,'contactPhone':'bad'}})[0]==400)
+check('duplicate categories rejected',call(a,key=ka,body={'action':'profile','payload':{**profile,'categoryOrder':['重复','重复']}})[0]==400)
+pickup=catalog['pickupWindow']['earliest']+151*60000
+if pickup%600000==0:pickup+=60000
+product=catalog['products'][0]
+def minute_payload(at):return {'action':'order','payload':{'idempotencyKey':str(uuid.uuid4()),'accessToken':str(uuid.uuid4()),'items':[{'id':product['id'],'quantity':1,'expectedPrice':1234}],'pickupAt':at,'spice':'不辣','note':'不加洋葱','alias':'虚构接口验证'}}
+status,minute=call(a,body=minute_payload(pickup));check('arbitrary minute remains exact in database',status==200 and minute['pickup_at']==pickup and pickup%600000!=0)
+check('simplified ticket starts with time and food',len(minute['print']['receipt'].split('\n'))==4 and '1份（不加辣；不加洋葱）' in minute['print']['receipt'] and '合计' not in minute['print']['receipt'])
+check('past pickup time rejected',call(a,body=minute_payload(catalog['pickupWindow']['earliest']-15*60000))[0]==400)
+check('sub-minute timestamps rejected',call(a,body=minute_payload(pickup+1000))[0]==400)
+post(a,'service',{'action':'capacity','capacity':1},admin)
+neighbor=pickup+60000 if pickup%600000<9*60000 else pickup-60000
+check('capacity cannot be bypassed using nearby minute',call(a,body=minute_payload(neighbor))[0]==409)
+slot=(pickup//600000+3)*600000
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:concurrent_results=list(pool.map(lambda at:call(a,body=minute_payload(at)),[slot+60000,slot+120000]))
+check('concurrent distinct minutes do not overbook shared capacity',sorted(r[0] for r in concurrent_results)==[200,409])
+
 # Remove these disposable simulation records from the user's local demo database.
 # IDs are random and created exclusively by this test; no existing tenant is touched.
 cleanup={'tenantIds':[a,b]}
