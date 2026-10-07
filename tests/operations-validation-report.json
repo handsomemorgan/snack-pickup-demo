@@ -32,11 +32,11 @@
     "capacity cannot be bypassed using nearby minute",
     "concurrent distinct minutes do not overbook shared capacity",
     "merchant dashboard excludes unpaid and cancelled sales",
-    "merchant ranking uses order snapshot quantities",
-    "merchant hourly curves return all 24 hours",
+    "merchant dashboard returns only daily totals",
+    "daily summary timestamps use current China day",
     "another store cannot access merchant analytics",
     "server analytics covers all sales beyond 100 displayed orders",
-    "server ranking includes full day beyond queue limit"
+    "daily summary contains no chart or ranking payload"
   ],
   "scope": "Local mock database, no real payment or merchant data"
 }

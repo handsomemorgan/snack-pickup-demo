@@ -53,9 +53,9 @@ export async function merchantData(M="demo-stall") {
   database().prepare("SELECT * FROM products WHERE merchant_id=? ORDER BY sort").bind(M).all<Row>(),
   database().prepare("SELECT * FROM orders WHERE merchant_id=? ORDER BY CASE WHEN status IN ('reserved','paid','ready','payment_review') THEN 0 ELSE 1 END, pickup_at ASC, created_at DESC LIMIT 100").bind(M).all<Row>(),
   database().prepare("SELECT * FROM print_jobs WHERE order_id IN (SELECT id FROM orders WHERE merchant_id=?) ORDER BY created_at DESC LIMIT 100").bind(M).all<Row>(),
-  database().prepare("SELECT merchant_id,created_at,pickup_at,status,payment_state,total,items FROM orders WHERE merchant_id=? AND payment_state='merchant_confirmed' AND status IN ('paid','ready','completed') AND ((created_at>=? AND created_at<?) OR (pickup_at>=? AND pickup_at<?))").bind(M,start,end,start,end).all<Row>()
+  database().prepare("SELECT merchant_id,created_at,status,payment_state,total FROM orders WHERE merchant_id=? AND payment_state='merchant_confirmed' AND status IN ('paid','ready','completed') AND created_at>=? AND created_at<?").bind(M,start,end).all<Row>()
  ]);
- return {merchant:{...m,license_token:undefined,login_key_hash:undefined,categoryOrder:JSON.parse(m.category_order||"[]")},license:await licenseStatus(m),products:products.results,analytics:merchantAnalytics(sales.results.map(o=>({...o,items:JSON.parse(o.items)})),M,now),orders:orders.results.map(o=>({...o,access_hash:undefined,request_hash:undefined,idempotency_key:undefined,items:JSON.parse(o.items),print:jobs.results.find(p=>p.order_id===o.id)}))};
+ return {merchant:{...m,license_token:undefined,login_key_hash:undefined,categoryOrder:JSON.parse(m.category_order||"[]")},license:await licenseStatus(m),heartbeat:heartbeatState(m),products:products.results,analytics:merchantAnalytics(sales.results,M,now),orders:orders.results.map(o=>({...o,access_hash:undefined,request_hash:undefined,idempotency_key:undefined,items:JSON.parse(o.items),print:jobs.results.find(p=>p.order_id===o.id)}))};
 }
 export function imageData(value:unknown){
  if(value===undefined||value===null||value==="")return null;

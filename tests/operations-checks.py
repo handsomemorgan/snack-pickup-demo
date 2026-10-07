@@ -79,8 +79,8 @@ check('concurrent distinct minutes do not overbook shared capacity',sorted(r[0] 
 # Analytics uses the full day, independently of the operational queue limit.
 _,shop_report=call(a,'merchant',ka)
 check('merchant dashboard excludes unpaid and cancelled sales',shop_report['analytics']['soldOrders']==3 and shop_report['analytics']['revenue']==3702)
-check('merchant ranking uses order snapshot quantities',shop_report['analytics']['bestSellers'][0]['quantity']==3 and shop_report['analytics']['bestSellers'][0]['name']=='测试餐品')
-check('merchant hourly curves return all 24 hours',len(shop_report['analytics']['pickupHours'])==24 and len(shop_report['analytics']['orderHours'])==24)
+check('merchant dashboard returns only daily totals',set(shop_report['analytics'])=={'dayStart','generatedAt','soldOrders','revenue'})
+check('daily summary timestamps use current China day',shop_report['analytics']['dayStart']<=shop_report['analytics']['generatedAt']<shop_report['analytics']['dayStart']+86400000)
 check('another store cannot access merchant analytics',call(b,'merchant',ka)[0]==401 and call(b,'merchant',kb)[1]['analytics']['soldOrders']==0)
 import subprocess,time
 now=int(time.time()*1000)
@@ -98,7 +98,7 @@ result=subprocess.run(args,cwd=Path(__file__).resolve().parents[1],capture_outpu
 assert result.returncode==0,'synthetic analytics fixture could not be prepared'
 _,shop_report=call(a,'merchant',ka)
 check('server analytics covers all sales beyond 100 displayed orders',len(shop_report['orders'])==100 and shop_report['analytics']['soldOrders']==108 and shop_report['analytics']['revenue']==98202)
-check('server ranking includes full day beyond queue limit',shop_report['analytics']['bestSellers'][0]['quantity']==105 and shop_report['analytics']['bestSellers'][0]['name']=='虚构统计餐品')
+check('daily summary contains no chart or ranking payload',set(shop_report['analytics'])=={'dayStart','generatedAt','soldOrders','revenue'})
 
 # Remove these disposable simulation records from the user's local demo database.
 # IDs are random and created exclusively by this test; no existing tenant is touched.

@@ -1,22 +1,14 @@
 {
-  "count": 16,
+  "count": 8,
   "passed": [
-    "empty store has zero sales and 24 zero hourly buckets",
-    "money stays in integer cents and includes paid add-ons",
-    "portions and ranking exclude individual add-ons",
-    "ordering and pickup curves use distinct China hours",
-    "one order with two portions is not two customers",
-    "tenant isolation and unpaid or unresolved states are excluded",
-    "ready and completed sales remain counted",
+    "empty store has zero orders and turnover",
+    "one multi-portion order counts once and includes full paid amount in cents",
+    "other stores unpaid and unresolved orders excluded",
+    "ready and completed confirmed orders remain counted",
     "China midnight inclusive and next midnight exclusive",
-    "timezone day starts at UTC16 regardless of machine timezone",
-    "yesterday order with today pickup appears only in pickup curve",
-    "today sale with tomorrow pickup does not inflate today pickup curve",
-    "aggregation covers more than the 100 order queue limit",
-    "product ID groups snapshots with historical price retained",
-    "ranking sorts by portions not revenue",
-    "ranking keeps best five",
-    "display-only example has lunch and dinner peaks without mutating live totals"
+    "timezone fixed to Beijing despite host timezone",
+    "full daily aggregate is independent of 100 order display limit",
+    "response has only daily totals without rankings or curves"
   ],
-  "scope": "Synthetic data with explicit timezone and tenant boundaries"
+  "scope": "Daily summary with synthetic timezone and tenant boundaries"
 }
