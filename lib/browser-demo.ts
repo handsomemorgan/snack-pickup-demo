@@ -1,5 +1,5 @@
 import { SEED_PRODUCTS } from "./menu";
-import { orderQuery, summarizeOrders } from "./operations";
+import { orderQuery, summarizeOrders, merchantAnalytics } from "./operations";
 import { pickupWindow, validPickup, pickupBucket, kitchenReceipt, contactPhone, categoryOrder } from "./pickup";
 // Public, browser-only simulation. These demonstration keys are not credentials.
 type Row = Record<string, any>;
@@ -31,7 +31,7 @@ function read(): State {
 function save(state: State) { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { throw new Error("浏览器演示存储已满或被禁用，请移除部分图片或重置演示数据。"); } }
 function license(m: Row) { return { valid: !m.suspended && m.license_expires > Date.now(), expiresAt: m.license_expires, suspended: !!m.suspended, signatureValid: false }; }
 function heartbeat(m: Row) { return { lastSeen: m.last_heartbeat, online: !!m.last_heartbeat && Date.now() - m.last_heartbeat < 70000, ageSeconds: m.last_heartbeat ? Math.floor((Date.now() - m.last_heartbeat) / 1000) : null, source: "浏览器模拟", offlineAfterSeconds: 70 }; }
-function merchantData(shop: Shop) { return { merchant: shop.merchant, license: license(shop.merchant), products: shop.products.slice().sort((a, b) => a.sort - b.sort), orders: shop.orders.slice().reverse().map(publicOrder) }; }
+function merchantData(shop: Shop) { return { merchant: shop.merchant, analytics: merchantAnalytics(shop.orders, shop.merchant.id), license: license(shop.merchant), products: shop.products.slice().sort((a, b) => a.sort - b.sort), orders: shop.orders.slice().reverse().map(publicOrder) }; }
 function serviceData(state: State, shop: Shop) { const m = shop.merchant; return { merchant: { id: m.id, name: m.name, printerOnline: m.printer_online, capacity: m.capacity, heartbeat: heartbeat(m) }, license: license(m), events: shop.events.slice().reverse(), tenants: Object.values(state.shops).map(s => ({ id: s.merchant.id, name: s.merchant.name, license: license(s.merchant), heartbeat: heartbeat(s.merchant), stats: summarizeOrders(s.orders) })) }; }
 function catalog(shop: Shop) {
   const m = shop.merchant, start = Math.ceil((Date.now() + 10 * 60000) / 600000) * 600000;

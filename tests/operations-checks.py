@@ -76,6 +76,30 @@ slot=(pickup//600000+3)*600000
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:concurrent_results=list(pool.map(lambda at:call(a,body=minute_payload(at)),[slot+60000,slot+120000]))
 check('concurrent distinct minutes do not overbook shared capacity',sorted(r[0] for r in concurrent_results)==[200,409])
 
+# Analytics uses the full day, independently of the operational queue limit.
+_,shop_report=call(a,'merchant',ka)
+check('merchant dashboard excludes unpaid and cancelled sales',shop_report['analytics']['soldOrders']==3 and shop_report['analytics']['revenue']==3702)
+check('merchant ranking uses order snapshot quantities',shop_report['analytics']['bestSellers'][0]['quantity']==3 and shop_report['analytics']['bestSellers'][0]['name']=='测试餐品')
+check('merchant hourly curves return all 24 hours',len(shop_report['analytics']['pickupHours'])==24 and len(shop_report['analytics']['orderHours'])==24)
+check('another store cannot access merchant analytics',call(b,'merchant',ka)[0]==401 and call(b,'merchant',kb)[1]['analytics']['soldOrders']==0)
+import subprocess,time
+now=int(time.time()*1000)
+fixture_items=json.dumps([{'id':'analytics-fixture-main','name':'虚构统计餐品','category':'热食','price':900,'quantity':1}],ensure_ascii=False)
+q=lambda v:"'"+str(v).replace("'","''")+"'"
+rows=[]
+for i in range(105):
+    oid='analytics-'+suffix+'-'+str(i)
+    vals=[oid,a,oid,'synthetic-request','synthetic-access',oid,now+20*60000,1,900,fixture_items,'','不辣','虚构统计校验','paid','merchant_confirmed',now,now]
+    rows.append('INSERT INTO orders (id,merchant_id,idempotency_key,request_hash,access_hash,pickup_code,pickup_at,quantity,total,items,note,spice,alias,status,payment_state,created_at,updated_at) VALUES ('+','.join(str(v) if isinstance(v,int) else q(v) for v in vals)+');')
+fixture_path=Path('/private/tmp/snack-analytics-test-fixture.sql');fixture_path.write_text('\n'.join(rows))
+node='/Users/ou/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node'
+args=[node,'--import','./scripts/sites-env.mjs','./node_modules/wrangler/bin/wrangler.js','d1','execute','DB','--local','--config','dist/server/wrangler.json','--persist-to','.wrangler/state','--file',str(fixture_path),'--json']
+result=subprocess.run(args,cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True)
+assert result.returncode==0,'synthetic analytics fixture could not be prepared'
+_,shop_report=call(a,'merchant',ka)
+check('server analytics covers all sales beyond 100 displayed orders',len(shop_report['orders'])==100 and shop_report['analytics']['soldOrders']==108 and shop_report['analytics']['revenue']==98202)
+check('server ranking includes full day beyond queue limit',shop_report['analytics']['bestSellers'][0]['quantity']==105 and shop_report['analytics']['bestSellers'][0]['name']=='虚构统计餐品')
+
 # Remove these disposable simulation records from the user's local demo database.
 # IDs are random and created exclusively by this test; no existing tenant is touched.
 cleanup={'tenantIds':[a,b]}
