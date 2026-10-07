@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791356003692,
+      "tag": "0000_freezing_firebird",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791360593288,
+      "tag": "0001_famous_malice",
+      "breakpoints": true
+    }
+  ]
+}

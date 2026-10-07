@@ -1,0 +1,25 @@
+{
+  "count": 19,
+  "passed": [
+    "simulated menu is seeded without network requests",
+    "non-demo login rejected",
+    "merchant role cannot administer demo stores",
+    "product without image reaches customer menu",
+    "product is isolated from another store",
+    "cannot edit other store product",
+    "store presentation reaches customer",
+    "reservation starts unpaid with simulated ticket",
+    "repeated reservation does not create another order",
+    "order is not readable through another store",
+    "existing order preserves name and price",
+    "stale price blocks new reservation",
+    "administrator sees simulated workbench heartbeat",
+    "expiry does not affect another store",
+    "expired authorization blocks new orders",
+    "existing order can be fulfilled after expiry",
+    "new store is empty and initially unlicensed",
+    "license does not transfer between stores",
+    "public browser storage is separate from local database"
+  ],
+  "scope": "Browser simulation only; not proof of server authorization or payment integration"
+}

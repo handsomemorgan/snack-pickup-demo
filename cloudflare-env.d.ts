@@ -1,0 +1,1 @@
+declare namespace Cloudflare { interface Env { DB?: D1Database; BUCKET?: R2Bucket; MERCHANT_ADMIN_KEY?: string; SERVICE_ADMIN_KEY?: string; LICENSE_SECRET?: string; DEMO_MODE?: string; PRINTER_MODE?: string; FEIE_USER?: string; FEIE_UKEY?: string; FEIE_SN?: string; } }
