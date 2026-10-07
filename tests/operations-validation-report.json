@@ -1,0 +1,27 @@
+{
+  "count": 21,
+  "passed": [
+    "new tenant receives unique merchant key",
+    "key resolves correct store from different entry",
+    "key resolves without existing tenant entry",
+    "original configured merchant key still resolves",
+    "wrong login rejected",
+    "superadmin key cannot act as merchant login",
+    "merchant key cannot read other store",
+    "merchant cannot read superadmin sales report",
+    "public cannot read sales report",
+    "merchant cannot create tenant keys",
+    "all orders included in aggregate, not only first page",
+    "confirmed sales exclude unpaid and cancelled orders",
+    "today uses Beijing order creation day",
+    "second page retains full-store summary",
+    "search by full order number",
+    "search by pickup code",
+    "store report is scoped to selected tenant",
+    "other store search cannot reveal order",
+    "report contains details without sensitive authentication fields",
+    "invalid pagination rejected",
+    "superadmin overview has independent tenant totals"
+  ],
+  "scope": "Local mock database, no real payment or merchant data"
+}

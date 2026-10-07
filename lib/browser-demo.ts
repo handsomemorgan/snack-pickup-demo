@@ -1,4 +1,5 @@
 import { SEED_PRODUCTS } from "./menu";
+import { orderQuery, summarizeOrders } from "./operations";
 // Public, browser-only simulation. These demonstration keys are not credentials.
 type Row = Record<string, any>;
 type Shop = { merchant: Row; products: Row[]; orders: Row[]; events: Row[]; key: string };
@@ -7,7 +8,7 @@ const STORE = "snack:public-demo:v1";
 const ADMIN_KEY = "demo-admin";
 const stamp = (at: number) => new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(at);
 function makeShop(id: string, name: string, products: Row[] = [], expires = Date.now() + 30 * 86400000): Shop {
-  return { key: "demo-shop", merchant: { id, name, subtitle: "校园小吃街 · 预约自取", description: "提前选好，按约定时间取餐。", accent: "#ea531a", hero_image: null, license_expires: expires, suspended: false, printer_online: true, capacity: 6, last_heartbeat: null }, products: products.map(p => ({ ...p, merchant_id: id, active: 1, updated_at: Date.now(), description: p.description || "", image_data: p.image_data || null })), orders: [], events: [] };
+  return { key: id === "template-shop" ? "demo-shop" : id === "demo-stall" ? "demo-stall-shop" : "demo-shop-" + crypto.randomUUID(), merchant: { id, name, subtitle: "校园小吃街 · 预约自取", description: "提前选好，按约定时间取餐。", accent: "#ea531a", hero_image: null, license_expires: expires, suspended: false, printer_online: true, capacity: 6, last_heartbeat: null }, products: products.map(p => ({ ...p, merchant_id: id, active: 1, updated_at: Date.now(), description: p.description || "", image_data: p.image_data || null })), orders: [], events: [] };
 }
 function initial(): State {
   return { version: 1, shops: { "demo-stall": makeShop("demo-stall", "东北烤冷面（示例店）", SEED_PRODUCTS), "template-shop": makeShop("template-shop", "独立店家模板", [{ id: "template-main", name: "招牌烤冷面（示例）", category: "热食", price: 900, sort: 0 }, { id: "template-drink", name: "冰豆浆（示例）", category: "饮品", price: 350, sort: 1 }]) } };
@@ -15,29 +16,37 @@ function initial(): State {
 function read(): State {
   let state: State;
   try { state = JSON.parse(localStorage.getItem(STORE) || "null"); if (state?.version !== 1 || !state.shops) state = initial(); } catch { state = initial(); }
+  // Upgrade legacy shared demo keys without discarding browser orders or menus.
+  for (const [id, shop] of Object.entries(state.shops)) if (id !== "template-shop" && shop.key === "demo-shop") shop.key = id === "demo-stall" ? "demo-stall-shop" : "demo-shop-" + id;
   for (const shop of Object.values(state.shops)) for (const order of shop.orders) if (order.status === "reserved" && order.created_at < Date.now() - 15 * 60000) order.status = "expired";
   return state;
 }
 function save(state: State) { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { throw new Error("浏览器演示存储已满或被禁用，请移除部分图片或重置演示数据。"); } }
 function license(m: Row) { return { valid: !m.suspended && m.license_expires > Date.now(), expiresAt: m.license_expires, suspended: !!m.suspended, signatureValid: false }; }
 function heartbeat(m: Row) { return { lastSeen: m.last_heartbeat, online: !!m.last_heartbeat && Date.now() - m.last_heartbeat < 70000, ageSeconds: m.last_heartbeat ? Math.floor((Date.now() - m.last_heartbeat) / 1000) : null, source: "浏览器模拟", offlineAfterSeconds: 70 }; }
-function merchantData(shop: Shop) { return { merchant: shop.merchant, license: license(shop.merchant), products: shop.products.slice().sort((a, b) => a.sort - b.sort), orders: shop.orders.slice().reverse() }; }
-function serviceData(state: State, shop: Shop) { const m = shop.merchant; return { merchant: { id: m.id, name: m.name, printerOnline: m.printer_online, capacity: m.capacity, heartbeat: heartbeat(m) }, license: license(m), events: shop.events.slice().reverse(), tenants: Object.values(state.shops).map(s => ({ id: s.merchant.id, name: s.merchant.name, license: license(s.merchant), heartbeat: heartbeat(s.merchant) })) }; }
+function merchantData(shop: Shop) { return { merchant: shop.merchant, license: license(shop.merchant), products: shop.products.slice().sort((a, b) => a.sort - b.sort), orders: shop.orders.slice().reverse().map(publicOrder) }; }
+function serviceData(state: State, shop: Shop) { const m = shop.merchant; return { merchant: { id: m.id, name: m.name, printerOnline: m.printer_online, capacity: m.capacity, heartbeat: heartbeat(m) }, license: license(m), events: shop.events.slice().reverse(), tenants: Object.values(state.shops).map(s => ({ id: s.merchant.id, name: s.merchant.name, license: license(s.merchant), heartbeat: heartbeat(s.merchant), stats: summarizeOrders(s.orders) })) }; }
 function catalog(shop: Shop) {
   const m = shop.merchant, start = Math.ceil((Date.now() + 10 * 60000) / 600000) * 600000;
   return { merchant: { id: m.id, name: m.name, subtitle: m.subtitle, description: m.description, accent: m.accent, heroImage: m.hero_image }, license: license(m), products: shop.products.filter(p => p.active), slots: Array.from({ length: 12 }, (_, i) => { const at = start + i * 600000; const used = shop.orders.filter(o => o.pickup_at === at && !["cancelled", "expired"].includes(o.status)).reduce((sum, o) => sum + o.quantity, 0); return { at, label: stamp(at), remaining: Math.max(0, m.capacity - used) }; }), demoMode: true };
 }
 function image(value: unknown) { if (!value) return null; if (typeof value !== "string" || value.length > 420000 || !/^data:image\/(jpeg|png|webp);base64,/.test(value)) throw new Error("请选择有效且已压缩的 JPG、PNG 或 WebP 图片。"); return value; }
-function requireRole(key: string, shop: Shop, admin = false) { if (key !== (admin ? ADMIN_KEY : shop.key)) throw new Error(admin ? "公开演示超管密钥为 demo-admin" : "公开演示店家密钥为 demo-shop"); }
+function requireRole(key: string, shop: Shop, admin = false) { if (key !== (admin ? ADMIN_KEY : shop.key)) throw new Error(admin ? "公开演示超管密钥为 demo-admin" : "店家密钥与这家店不匹配"); }
 function receipt(o: Row) { return `取餐有约 · 浏览器模拟预约票\n不进行真实交易，不代表付款成功\n取餐码 ${o.pickup_code}\n预约 ${stamp(o.pickup_at)}\n--------------------------\n${o.items.map((p: Row) => `${p.name} × ${p.quantity}   ¥${(p.price * p.quantity / 100).toFixed(2)}`).join("\n")}\n--------------------------\n合计 ¥${(o.total / 100).toFixed(2)}\n口味 ${o.spice}\n备注 ${o.note || "无"}\n称呼 ${o.alias || "演示用户"}`; }
 function publicOrder(o: Row) { const { accessToken: _token, idempotencyKey: _id, ...rest } = o; return rest; }
 function run(tenant: string, view: string, key: string, body?: Row, token = "") {
   if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(tenant)) throw new Error("店家编号无效。");
-  const state = read(), shop = state.shops[tenant]; if (!shop) throw new Error("这个浏览器中还没有该店家，请通过超管演示创建。");
+  const state = read();
+  if (body?.action === "merchant_login") { const matches=Object.values(state.shops).filter(s=>s.key===key); if (!key||key===ADMIN_KEY||matches.length!==1) throw new Error("店家密钥不正确");save(state);return merchantData(matches[0]); }
+  const shop = state.shops[tenant]; if (!shop) throw new Error("这个浏览器中还没有该店家，请通过超管演示创建。");
   const query = new URLSearchParams(view.includes("=") ? view : "view=" + view);
   if (!body) {
     if (query.get("view") === "merchant") { requireRole(key, shop); return merchantData(shop); }
     if (query.get("view") === "service") { requireRole(key, shop, true); return serviceData(state, shop); }
+    if (query.get("view") === "operations") {
+      requireRole(key,shop,true);const {page,search,pageSize}=orderQuery(query), matches=shop.orders.filter(o=>!search||o.id.includes(search)||o.pickup_code.includes(search)).sort((a,b)=>b.created_at-a.created_at||b.id.localeCompare(a.id));
+      return {merchant:{id:tenant,name:shop.merchant.name},summary:summarizeOrders(shop.orders),orders:matches.slice((page-1)*pageSize,page*pageSize).map(o=>({...publicOrder(o),print_status:o.print?.status})),pagination:{page,pageSize,total:matches.length,search}};
+    }
     if (query.get("view") === "order") { const o = shop.orders.find(o => o.id === query.get("id") && o.accessToken === token); if (!o) throw new Error("未找到这笔演示预约。"); return publicOrder(o); }
     return catalog(shop);
   }
@@ -90,7 +99,7 @@ function run(tenant: string, view: string, key: string, body?: Row, token = "") 
   } else if (action === "create_tenant") {
     const id = String(p.id || "").trim(), name = String(p.name || "").trim();
     if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(id) || !name || name.length > 60) throw new Error("请填写有效店家编号和名称。");
-    if (state.shops[id]) throw new Error("这个店家编号已存在。"); state.shops[id] = makeShop(id, name, [], 0); result = { ...serviceData(state, shop), createdTenant: { id, name, key: "demo-shop" } };
+    if (state.shops[id]) throw new Error("这个店家编号已存在。"); state.shops[id] = makeShop(id, name, [], 0); result = { ...serviceData(state, shop), createdTenant: { id, name, key: state.shops[id].key } };
   } else throw new Error("未知演示操作。");
   save(state); return result;
 }

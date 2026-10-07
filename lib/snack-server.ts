@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { SEED_PRODUCTS } from "./menu";
+import { chinaDayStart, orderQuery } from "./operations";
 const M="demo-stall";const encoder=new TextEncoder();
 type Row=Record<string,any>;
 export class ApiError extends Error{constructor(public status:number,message:string){super(message)}}
@@ -14,6 +15,14 @@ export async function requireKey(req:Request,role:"merchant"|"service",M="demo-s
  if(role==="service"){if(!(await same(input,config("SERVICE_ADMIN_KEY"))))throw new ApiError(401,"超管密钥不正确");return;}
  const m=await merchant(M);const valid=m.login_key_hash?await same(await sha(input),m.login_key_hash):M==="demo-stall"&&await same(input,config("MERCHANT_ADMIN_KEY"));
  if(!input||!valid)throw new ApiError(401,"店家密钥与租户不匹配，请重新输入");
+}
+export async function merchantLogin(req:Request){
+ await seed();const input=req.headers.get("x-admin-key")??"";
+ if(!input||input.length>200||await same(input,config("SERVICE_ADMIN_KEY")))throw new ApiError(401,"店家密钥不正确");
+ const matches=await database().prepare("SELECT id FROM merchants WHERE login_key_hash=? LIMIT 2").bind(await sha(input)).all<Row>();
+ if(matches.results.length===1)return merchantData(matches.results[0].id);
+ if(!matches.results.length&&await same(input,config("MERCHANT_ADMIN_KEY"))){const m=await merchant();if(!m.login_key_hash)return merchantData(m.id);}
+ throw new ApiError(401,"店家密钥不正确");
 }
 
 function b64(s:string){return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")}
@@ -67,8 +76,21 @@ export async function heartbeat(M="demo-stall"){
 export function heartbeatState(m:Row){const last=Number(m.last_heartbeat)||0;return {lastSeen:last||null,online:!!last&&Date.now()-last<70_000,ageSeconds:last?Math.max(0,Math.floor((Date.now()-last)/1000)):null,source:"店家工作台",offlineAfterSeconds:70};}
 export async function orderAction(body:Row,M="demo-stall"){const o=await database().prepare("SELECT * FROM orders WHERE id=? AND merchant_id=?").bind(body.id,M).first<Row>();if(!o)throw new ApiError(404,"订单不存在");let next=o.status,payment=o.payment_state;if(body.action==="confirm_payment"){if(!["reserved","expired","payment_review","paid"].includes(o.status))throw new ApiError(409,"该订单当前不能确认收款");payment="merchant_confirmed";next=o.status==="expired"?"payment_review":"paid";}else if(body.action==="ready"){if(o.status!=="paid")throw new ApiError(409,"先核对收款，再标记餐品做好");next="ready";}else if(body.action==="picked_up"){if(o.status!=="ready")throw new ApiError(409,"请先标记餐品做好");next="completed";}else if(body.action==="cancel"){if(o.payment_state!=="unconfirmed"||!["reserved","expired"].includes(o.status))throw new ApiError(409,"已收款订单请先与顾客处理退款，不可直接取消");next="cancelled";}else throw new ApiError(400,"操作无效");await database().prepare("UPDATE orders SET status=?,payment_state=?,updated_at=? WHERE id=? AND status=? AND payment_state=?").bind(next,payment,Date.now(),o.id,o.status,o.payment_state).run();return merchantData(M);}
 export async function serviceData(M="demo-stall"){
- const m=await merchant(M);const [log,list]=await Promise.all([database().prepare("SELECT * FROM license_events WHERE merchant_id=? ORDER BY created_at DESC LIMIT 20").bind(M).all(),database().prepare("SELECT * FROM merchants ORDER BY id").all<Row>()]);
- return {merchant:{id:M,name:m.name,printerOnline:!!m.printer_online,capacity:m.capacity,heartbeat:heartbeatState(m)},license:await licenseStatus(m),events:log.results,tenants:await Promise.all(list.results.map(async(t)=>({id:t.id,name:t.name,license:await licenseStatus(t),heartbeat:heartbeatState(t)})))};
+ const m=await merchant(M);await expireReservations();const [log,list,totals]=await Promise.all([database().prepare("SELECT * FROM license_events WHERE merchant_id=? ORDER BY created_at DESC LIMIT 20").bind(M).all(),database().prepare("SELECT * FROM merchants ORDER BY id").all<Row>(),database().prepare(`SELECT merchant_id,${summarySQL()} FROM orders GROUP BY merchant_id`).bind(chinaDayStart(),chinaDayStart()).all<Row>()]);
+ return {merchant:{id:M,name:m.name,printerOnline:!!m.printer_online,capacity:m.capacity,heartbeat:heartbeatState(m)},license:await licenseStatus(m),events:log.results,tenants:await Promise.all(list.results.map(async(t)=>({id:t.id,name:t.name,license:await licenseStatus(t),heartbeat:heartbeatState(t),stats:totals.results.find(s=>s.merchant_id===t.id)||emptySummary()})))};
+}
+function emptySummary(){return {totalOrders:0,confirmedOrders:0,confirmedRevenue:0,todayOrders:0,todayRevenue:0,unconfirmedOrders:0,completedOrders:0};}
+function summarySQL(){return `COUNT(*) AS totalOrders,COALESCE(SUM(CASE WHEN payment_state='merchant_confirmed' THEN total ELSE 0 END),0) AS confirmedRevenue,SUM(CASE WHEN payment_state='merchant_confirmed' THEN 1 ELSE 0 END) AS confirmedOrders,COALESCE(SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END),0) AS todayOrders,COALESCE(SUM(CASE WHEN created_at>=? AND payment_state='merchant_confirmed' THEN total ELSE 0 END),0) AS todayRevenue,COALESCE(SUM(CASE WHEN status='reserved' AND payment_state='unconfirmed' THEN 1 ELSE 0 END),0) AS unconfirmedOrders,COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END),0) AS completedOrders`;}
+export async function storeOperations(M:string,query:URLSearchParams){
+ const m=await merchant(M);await expireReservations();let options;try{options=orderQuery(query);}catch{throw new ApiError(400,"订单查询参数无效");}
+ const {page,search,pageSize}=options;
+ const where="merchant_id=? AND (?='' OR instr(id,?)>0 OR instr(pickup_code,?)>0)",bindings=[M,search,search,search];
+ const [summary,count,rows]=await Promise.all([
+  database().prepare(`SELECT ${summarySQL()} FROM orders WHERE merchant_id=?`).bind(chinaDayStart(),chinaDayStart(),M).first<Row>(),
+  database().prepare(`SELECT COUNT(*) AS count FROM orders WHERE ${where}`).bind(...bindings).first<Row>(),
+  database().prepare(`SELECT id,merchant_id,pickup_code,pickup_at,quantity,total,items,note,spice,alias,status,payment_state,created_at,updated_at,(SELECT status FROM print_jobs WHERE order_id=orders.id LIMIT 1) AS print_status FROM orders WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`).bind(...bindings,pageSize,(page-1)*pageSize).all<Row>()
+ ]);
+ return {merchant:{id:M,name:m.name},summary:{...emptySummary(),...summary},orders:rows.results.map(o=>({...o,items:JSON.parse(o.items)})),pagination:{page,pageSize,total:Number(count?.count||0),search}};
 }
 export async function createTenant(body:Row,M="demo-stall"){
  const id=String(body.id??"").trim(),name=String(body.name??"").trim();if(!/^[a-z0-9][a-z0-9-]{2,39}$/.test(id)||!name||name.length>60)throw new ApiError(400,"租户编号须为3—40位小写字母、数字或横线，名称不能为空");

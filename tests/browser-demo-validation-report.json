@@ -1,5 +1,5 @@
 {
-  "count": 19,
+  "count": 33,
   "passed": [
     "simulated menu is seeded without network requests",
     "non-demo login rejected",
@@ -19,7 +19,21 @@
     "existing order can be fulfilled after expiry",
     "new store is empty and initially unlicensed",
     "license does not transfer between stores",
-    "public browser storage is separate from local database"
+    "public browser storage is separate from local database",
+    "different merchant keys select the corresponding tenant",
+    "new generated key resolves without tenant selection",
+    "superadmin key cannot log into merchant role",
+    "merchant key cannot read another store backend",
+    "merchant cannot read superadmin operations",
+    "superadmin reads completed order and confirmed amount",
+    "reports never expose customer access tokens",
+    "administrator searches order number",
+    "administrator searches pickup code",
+    "empty tenant has zero sales",
+    "paginated records retain all-order totals",
+    "invalid order pagination rejected",
+    "tenant overview includes separate sales totals",
+    "legacy shared demo keys are upgraded without losing orders"
   ],
   "scope": "Browser simulation only; not proof of server authorization or payment integration"
 }
